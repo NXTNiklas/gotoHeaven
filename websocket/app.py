@@ -12,8 +12,8 @@ from base64 import decodestring
 from datetime import datetime
 import os
 import errno
-from LoggingManager import LoggingManager
 from tornado.ioloop import PeriodicCallback
+from loggingManager.LoggingManager import LoggingManager
 
 class drones():
     def __init__(self):
@@ -142,6 +142,7 @@ class ViewHandler(websocket.WebSocketHandler):
         else:
             try:
                 action = messageJSON['action']
+                param = messageJSON['params'];
             except KeyError:
                 data = {'error': 'Nothing to do...','errorMessage': 'No Action defined'}
                 print(json.dumps(data))
@@ -150,14 +151,15 @@ class ViewHandler(websocket.WebSocketHandler):
                 if action == 'refresh':
                     #Checking if fields are set
                     try:
-                        uuid = messageJSON['uuid']
+                        uuid = param[0]
                     except KeyError:
                         data = {'error': 'Who should i refresh?','errorMessage': 'No uuid defined'}
                         print(json.dumps(data))
                         self.write_message(json.dumps(data))
                     else:
                         drones.refresh(self,uuid)
-        
+                else:
+                    print('Unkown:' +json.dumps(messageJSON))
             
 class Drone(websocket.WebSocketHandler):
     def check_origin(self, origin):
@@ -171,7 +173,7 @@ class Drone(websocket.WebSocketHandler):
             try:
                 self.uuid = str(uuid.uuid4())
                 #Try to create Loggingpath:
-                logpath = os.path.dirname(os.path.realpath(__file__))+'/logs/Logins/'
+                logpath = os.path.dirname(os.path.realpath(__file__))+'/loggingManager/logs/Logins/'
                 os.makedirs(logpath,0750 )
             except OSError as e:
                 if e.errno != errno.EEXIST:

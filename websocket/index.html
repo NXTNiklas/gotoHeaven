@@ -161,17 +161,56 @@
 		<div id='droneInfoBox'>
 		
 		</div>
-	</div>
+		<div>
+			Log:<br>
+			<textarea style="min-width:90%;min-height:200px"id='log'></textarea>
+		</div>
+ 		<div>
+			Console:<input style="min-width:90%;"id='consoleDom'></input>
+		</div>
  
 <script>
     var host = window.location.host;
+	actualCommand = 0;
+	old = [];
 	//var ws = new WebSocket('wss://'+host+'/laderaum/ws/drone?authHash=$2y$10$PLLi9.bNwvaJpx2yAtkjluMlBDhgGvaI3Ol/lmOhqgywHoKC01jsm&password=$2y$10$VG4pN4bE2Ia6YFTARHvm0.gkaLBzGIzsVOVR0FW3ezw8ZjOCtnTpi');
 	var ws = new WebSocket('ws://'+host+'/ws/view');
 
     var messageBox = document.getElementById('message');
 	var lastMessage = document.getElementById('lastMessage');
 	lastMessage.classList = 'label label-info';
-
+	var log = document.getElementById('log');
+	var consoleDom = document.getElementById('consoleDom');
+	consoleDom.addEventListener("keyup", function(event) {
+		// Cancel the default action, if needed
+		event.preventDefault();
+		// Number 13 is the "Enter" key on the keyboard
+		if (event.keyCode === 13) {
+			actualCommand = 0;
+			str = consoleDom.value;
+			old.push(str);
+			console.log(str);
+			splittedInput = str.split(" ");
+			command = splittedInput[0];
+			splittedInput.shift();
+			data = {
+				action: command,
+				params: splittedInput
+				
+			};
+			
+			console.log(data);
+			consoleDom.value = "";
+			actualCommand++;
+			// Trigger the button element with a click
+			ws.send(JSON.stringify(data));
+		}else if (event.keyCode === 38){
+			consoleDom.value = old[--actualCommand];
+		}else if (event.keyCode === 40){
+			consoleDom.value = old[++actualCommand];
+		}
+	});
+	
     ws.onopen = function(){
       messageBox.classList = ('label label-success');
       messageBox.innerHTML = 'open';
@@ -179,9 +218,10 @@
     ws.onmessage = function(ev){
 		messageBox.classList = ('label label-info');
 		messageBox.innerHTML = 'recieved message';
-	
+		
 		var json = JSON.parse(ev.data);
 		console.log(json);
+		log.innerHTML += JSON.stringify(json)+"\n";
 		if (typeof json['action'] !== 'undefined') {
 			//Decide what to do based on the recieved Message:
 			action = json['action'];
@@ -236,7 +276,7 @@
 	ws.requestRefresh = function(uuid){
 		data = {
 			action: 'refresh'
-			, uuid: uuid
+			, params:[uuid]
 		}
 		ws.send(JSON.stringify(data));
 	}
