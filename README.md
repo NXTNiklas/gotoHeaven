@@ -2,7 +2,7 @@
 Librepilot and Websocket implementation for fully autonomous quadrocopter flight
 
 
-# Config of Pi (sorry only german):
+# Config of Pi:
 Install RaspberryPI Jessi, when using Stretch the Access Point wont work!
 Expand the Filesystem
 
