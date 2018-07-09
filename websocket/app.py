@@ -15,31 +15,13 @@ import errno
 from tornado.ioloop import PeriodicCallback
 from loggingManager.LoggingManager import LoggingManager
 
-def initGlobalLog():
-    try:
-        loguuid = str(uuid.uuid4())
-        #Try to create Loggingpath:
-        logpath = os.path.dirname(os.path.realpath(__file__))+'/loggingManager/logs/GlobalView/'
-        os.makedirs(logpath,0750 )
-    except OSError as e:
-        if e.errno != errno.EEXIST:
-            raise
-    
-    logger = LoggingManager(0,logpath+loguuid+'.log',loguuid,drones)
-    logger.info('Log Succesfully Created!')
-    return logger
-            
-
 class drones():
     def __init__(self):
         self.__drones = []
-        self.__views = []
         
     def __getdrones(self):
         return self.__drones
-    def __getViews(self):
-        return self.__views
-        
+    
     def append(self,droneHandler):
         if self not in self.__getdrones():
             self.__getdrones().append(droneHandler)
@@ -49,14 +31,6 @@ class drones():
         if droneHandler in self.__getdrones():
             self.__getdrones().remove(droneHandler)
             self.printRemovedrone(droneHandler)
-        
-    def appendView(self,viewHandler):
-        if self not in self.__getViews():
-            self.__getViews().append(viewHandler)
-    
-    def removeView(self,viewHandler):
-        if viewHandler in self.__getViews():
-            self.__getViews().remove(viewHandler)
             
     def printdronesToAll(self):
         droneJSON = {}
@@ -69,8 +43,11 @@ class drones():
             }
             droneJSON['drones'].append(data)
         droneJSON['action'] = 'printAll'    
-        
-        self.sendToViewClients(json.dumps(droneJSON))            
+        print(droneJSON)
+        for c in clients:
+            c.write_message(json.dumps(droneJSON))
+        for drone in self.__getdrones():
+            drone.sendMyData()    
             
     def printNewdrone(self,dronehandler):
         data = {
@@ -79,7 +56,8 @@ class drones():
                 , 'uuid':dronehandler.uuid
                 , 'action': 'add'
             }
-        self.sendToViewClients(json.dumps(data))
+        for c in clients:
+            c.write_message(json.dumps(data))
             
     def printRemovedrone(self,dronehandler):
         data = {
@@ -88,7 +66,8 @@ class drones():
                 , 'uuid':dronehandler.uuid
                 , 'action': 'remove'
             }
-        self.sendToViewClients(json.dumps(data))
+        for c in clients:
+            c.write_message(json.dumps(data))
     
     def printdronesToClient(self,client):
         droneJSON = {}
@@ -102,8 +81,10 @@ class drones():
             droneJSON['drones'].append(data)
         droneJSON['action'] = 'printAll';    
         print(droneJSON)
-        self.sendToViewClients(json.dumps(droneJSON))
-        
+        if client in clients:
+            client.write_message(json.dumps(droneJSON))
+        for drone in self.__getdrones():
+            drone.sendMyData()        
             
     def isOpen(self,drone):
         if drone in self.__getdrones():
@@ -126,18 +107,12 @@ class drones():
             print(json.dumps(data))
             c.write_message(json.dumps(data))
             
-    def send(self,message):
-        for drone in self.__getdrones():
-            drone.send(message)
-    
-    def sendToViewClients(self,message):
-        for view in self.__getViews():
-            view.send(message)
+            
 
 class IndexHandler(web.RequestHandler):
     def get(self):
         self.render("index.html")
-
+        
 class Index2Handler(web.RequestHandler):
     def get(self):
         self.render("index2.html")
@@ -147,12 +122,16 @@ class ViewHandler(websocket.WebSocketHandler):
         return True
     
     def open(self, *args):
-        drones.appendView(self)
+                
+        if self not in clients:
+            clients.append(self)
+        
         drones.printdronesToClient(self);
             
     def on_close(self):
-        drones.removeView(self)
-        
+        if self in clients:
+            clients.remove(self)
+            
     def on_message(self,message):
         try:
             messageJSON = json.loads(message)
@@ -180,11 +159,8 @@ class ViewHandler(websocket.WebSocketHandler):
                     else:
                         drones.refresh(self,uuid)
                 else:
-                    globalViewLogger.info(messageJSON)
-                    drones.send(json.dumps(messageJSON))
-    def send(self,message):
-        self.write_message(json.dumps(message))
-        
+                    print('Unkown:' +json.dumps(messageJSON))
+            
 class Drone(websocket.WebSocketHandler):
     def check_origin(self, origin):
         self.__initLog();
@@ -223,8 +199,7 @@ class Drone(websocket.WebSocketHandler):
         try:
             messageJSON = json.loads(message)
         except ValueError:
-            data = {'action':'error'
-            ,'error': 'I don\'t understand you! Speak JSON!'}
+            data = {'error': 'I don\'t understand you! Speak JSON!'}
             self.__log.exception(data)
             self.write_message(json.dumps(data))
         else:
@@ -234,24 +209,32 @@ class Drone(websocket.WebSocketHandler):
                 try:
                     error = messageJSON['error']
                 except KeyError:
-                    data = {'action':'error','error': 'Nothing to do...'}
+                    data = {'error': 'Nothing to do...'}
                     self.__log.exception(data)
                     self.write_message(json.dumps(data))
                 else:
                     self.__log.error(error)
             else:
-                data = {'action':'error','error': 'unknown Action'}
+                data = {'error': 'unknown Action'}
                 self.__log.exception(data)
                 self.write_message(json.dumps(data))
+                    
+    def sendMyData(self):
+        try:
+            data = {
+                'action': 'changeData'
+              , 'uuid': self.uuid
+            }
+            self.__log.debug('\'Sending Data\': '+ json.dumps(data))
+            for c in clients:
+                c.write_message(json.dumps(data))
+        except AttributeError:
+            pass
             
     def refresh(self):
         data = {'action':'refresh'}
         self.__log.info(data)
         self.write_message(data)
-    
-    def send(self,message):
-        self.__log.info(message)
-        self.write_message(message)
     
 app = web.Application([
     (r'/', IndexHandler),
@@ -262,8 +245,8 @@ app = web.Application([
     (r'/(rest_api_example.png)', web.StaticFileHandler, {'path': './'}),
 ], websocket_ping_interval = 10, websocket_ping_timeout = 20)
 
+clients = []
 drones = drones()
-globalViewLogger = initGlobalLog()
 
 if __name__ == '__main__':
     #ssl_ctx = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
